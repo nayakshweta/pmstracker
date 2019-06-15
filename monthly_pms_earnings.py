@@ -3,25 +3,29 @@ import urllib
 from bs4 import BeautifulSoup
 from datetime import datetime
 import csv
+from multiprocessing import Process
 
 class PmsTracker:
 
     def __init__(self, pmrId):
         self.pmrId = pmrId
-        self.csv_rows = []
 
-    def get_pms_earnings_all(self):
+    def update_pms_earnings_all(self):
         currentYear = datetime.now().year
         year = 2013         ## First year for which data is available on the SEBI webpage
+        jobs = []
         while year <= currentYear:
             month = 1
             while month <= 12:
-                self.get_pms_earning_for_given_month_and_year(year, month)
+                p = Process(target=self.update_pms_earning_for_given_month_and_year, args=(year, month))
+                jobs.append(p)
+                p.start()
                 month += 1
             year += 1
+        for proc in jobs:
+            proc.join()
 
-
-    def get_pms_earning_for_given_month_and_year(self, year, month):
+    def update_pms_earning_for_given_month_and_year(self, year, month):
         url_data = "pmrId=" + self.pmrId + "&year=" + str(year) + "&month=" + str(month)
         url_data = url_data.encode('ascii')
 
@@ -38,18 +42,15 @@ class PmsTracker:
             portfolio_perf_in_percentage = None
 
         print(self.pmrId, year, month, portfolio_perf_in_percentage)
-        row = self.create_row_for_csv(year, month, portfolio_perf_in_percentage)
-        if row != None:
-            self.csv_rows.append(row)
-
-    def create_row_for_csv(self, year, month, portfolio_perf_in_percentage):
         pmsname = self.pmrId.split('@@')[2]
         if portfolio_perf_in_percentage != None:
             row = [pmsname, year, month, portfolio_perf_in_percentage]
-            return row
+            with open('pms_earnings.csv', 'a') as writefile:
+                writer = csv.writer(writefile)
+                writer.writerow(row)
+                writefile.close()
         else:
             pass
-
 
 def get_sebi_report_page():
     queryurl = Request('https://www.sebi.gov.in/sebiweb/other/OtherAction.do?doPmr=yes')
@@ -81,16 +82,7 @@ def main():
     
     for pmrId in pmrId_list:
         p = PmsTracker(pmrId)
-        p.get_pms_earnings_all()
-        print(p.csv_rows)
-        if p.csv_rows:
-            for row in p.csv_rows:
-                with open('pms_earnings.csv', 'a') as writefile:
-                    writer = csv.writer(writefile)
-                    writer.writerow(row)
-                    writefile.close()
-        else:
-            pass
+        p.update_pms_earnings_all()
         print("updated entries for", pmrId)
 
 if __name__ == "__main__":
